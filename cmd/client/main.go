@@ -10,6 +10,13 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 )
 
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(state routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(state)
+	}
+}
+
 func main() {
 	fmt.Println("Starting Peril server...")
 	conn_str := "amqp://guest:guest@localhost:5672/"
@@ -30,8 +37,12 @@ func main() {
 		fmt.Printf("Failed to welcome client: %s\n", err)
 		return
 	}
-	pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, routing.PauseKey+"."+username, routing.PauseKey, pubsub.Transient)
 	gamestate := gamelogic.NewGameState(username)
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, "pause."+username, routing.PauseKey, pubsub.Transient, handlerPause(gamestate))
+	if err != nil {
+		fmt.Printf("Failed to subscribe to game exchange: %s\n", err)
+		return
+	}
 	for {
 		input := gamelogic.GetInput()
 		if len(input) == 0 {
@@ -49,6 +60,7 @@ func main() {
 			_, err := gamestate.CommandMove(input)
 			if err != nil {
 				fmt.Printf("Failed to move unit: %s\n", err)
+				continue
 			}
 			fmt.Printf("Successfully moved unit!\n")
 		case "status":
