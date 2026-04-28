@@ -10,13 +10,6 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 )
 
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
-	return func(state routing.PlayingState) {
-		defer fmt.Print("> ")
-		gs.HandlePause(state)
-	}
-}
-
 func main() {
 	fmt.Println("Starting Peril server...")
 	conn_str := "amqp://guest:guest@localhost:5672/"
@@ -43,6 +36,11 @@ func main() {
 		fmt.Printf("Failed to subscribe to game exchange: %s\n", err)
 		return
 	}
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "army_moves."+username, "army_moves.*", pubsub.Transient, handlerMove(gamestate))
+	if err != nil {
+		fmt.Printf("Failed to subscribe to topic exchange: %s\n", err)
+		return
+	}
 	for {
 		input := gamelogic.GetInput()
 		if len(input) == 0 {
@@ -57,12 +55,18 @@ func main() {
 			}
 		case "move": //Example usage: move europe 1
 			fmt.Println("Moving unit...")
-			_, err := gamestate.CommandMove(input)
+			move, err := gamestate.CommandMove(input)
 			if err != nil {
 				fmt.Printf("Failed to move unit: %s\n", err)
 				continue
 			}
 			fmt.Printf("Successfully moved unit!\n")
+			err = pubsub.PublishJSON(rmqChannel, routing.ExchangePerilTopic, "army_moves."+username, move)
+			if err != nil {
+				fmt.Printf("Failed to publish move: %s\n", err)
+				continue
+			}
+			fmt.Printf("Successfully published unit!\n")
 		case "status":
 			fmt.Println("Checking game status...")
 			gamestate.CommandStatus()

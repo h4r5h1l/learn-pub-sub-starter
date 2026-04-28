@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -22,6 +23,14 @@ type SimpleQueueType string
 const (
 	Durable   SimpleQueueType = "durable"
 	Transient SimpleQueueType = "transient"
+)
+
+type AckType string
+
+const (
+	Ack         AckType = "ack"
+	NackRequeue AckType = "nackrequeue"
+	NackDiscard AckType = "nackdiscard"
 )
 
 func DeclareAndBind(
@@ -56,7 +65,7 @@ func DeclareAndBind(
 	return ch, queue, nil
 }
 
-func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T)) error {
+func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
 	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -66,13 +75,27 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 		return err
 	}
 	go func() {
+		defer ch.Close()
 		for msg := range msgs {
 			var val T
 			if err := json.Unmarshal(msg.Body, &val); err != nil {
+				msg.Nack(false, false)
+				fmt.Printf("Negative Acknowledge occurred, Message Discarded\n")
 				continue
 			}
-			handler(val)
-			msg.Ack(false)
+			acktype := handler(val)
+			switch acktype {
+			case Ack:
+				msg.Ack(false)
+				fmt.Printf("Acknowledge occurred\n")
+			case NackRequeue:
+				msg.Nack(false, true)
+				fmt.Printf("Negative Acknowledge occurred, Message Requeued\n")
+			case NackDiscard:
+				msg.Nack(false, false)
+				fmt.Printf("Negative Acknowledge occurred, Message Discarded\n")
+
+			}
 		}
 	}()
 	return nil
