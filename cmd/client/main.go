@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Starting Peril server...")
+	fmt.Println("Starting Peril client...")
 	conn_str := "amqp://guest:guest@localhost:5672/"
 	conn, err := amqp.Dial(conn_str)
 	if err != nil {
@@ -33,12 +33,17 @@ func main() {
 	gamestate := gamelogic.NewGameState(username)
 	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, "pause."+username, routing.PauseKey, pubsub.Transient, handlerPause(gamestate))
 	if err != nil {
-		fmt.Printf("Failed to subscribe to game exchange: %s\n", err)
+		fmt.Printf("Failed to subscribe to game exchange pause queue: %s\n", err)
 		return
 	}
-	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "army_moves."+username, "army_moves.*", pubsub.Transient, handlerMove(gamestate))
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "army_moves."+username, "army_moves.*", pubsub.Transient, handlerMove(gamestate, rmqChannel))
 	if err != nil {
-		fmt.Printf("Failed to subscribe to topic exchange: %s\n", err)
+		fmt.Printf("Failed to subscribe to topic exchange army_moves queue: %s\n", err)
+		return
+	}
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "war", "war.*", pubsub.Durable, handlerConsumeWarMessages(gamestate))
+	if err != nil {
+		fmt.Printf("Failed to subscribe to topic exchange war queue: %s\n", err)
 		return
 	}
 	for {

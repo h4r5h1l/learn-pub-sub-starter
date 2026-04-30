@@ -55,7 +55,8 @@ func DeclareAndBind(
 		autoDelete = true
 		exclusive = true
 	}
-	queue, err := ch.QueueDeclare(queueName, durable, autoDelete, exclusive, false, nil)
+	amqptable := map[string]any{"x-dead-letter-exchange": "peril_dlx"}
+	queue, err := ch.QueueDeclare(queueName, durable, autoDelete, exclusive, false, amqptable)
 	if err != nil {
 		return nil, amqp.Queue{}, err
 	}
