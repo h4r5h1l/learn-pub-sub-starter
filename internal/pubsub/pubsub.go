@@ -1,9 +1,12 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -15,6 +18,18 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	return ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
 		ContentType: "application/json",
 		Body:        data,
+	})
+}
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(val); err != nil {
+		return err
+	}
+	return ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
+		ContentType: "application/gob",
+		Body:        buf.Bytes(),
 	})
 }
 
@@ -80,6 +95,45 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 		for msg := range msgs {
 			var val T
 			if err := json.Unmarshal(msg.Body, &val); err != nil {
+				msg.Nack(false, false)
+				fmt.Printf("Negative Acknowledge occurred, Message Discarded\n")
+				continue
+			}
+			acktype := handler(val)
+			switch acktype {
+			case Ack:
+				msg.Ack(false)
+				fmt.Printf("Acknowledge occurred\n")
+			case NackRequeue:
+				msg.Nack(false, true)
+				fmt.Printf("Negative Acknowledge occurred, Message Requeued\n")
+			case NackDiscard:
+				msg.Nack(false, false)
+				fmt.Printf("Negative Acknowledge occurred, Message Discarded\n")
+
+			}
+		}
+	}()
+	return nil
+}
+
+func SubscribeGob[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
+	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer ch.Close()
+		for msg := range msgs {
+			buf := bytes.NewBuffer(msg.Body)
+			dec := gob.NewDecoder(buf)
+			var val T
+			err := dec.Decode(&val)
+			if err != nil {
 				msg.Nack(false, false)
 				fmt.Printf("Negative Acknowledge occurred, Message Discarded\n")
 				continue

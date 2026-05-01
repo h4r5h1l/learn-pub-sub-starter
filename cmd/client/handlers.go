@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -31,7 +32,7 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 				Defender: gs.GetPlayerSnap(),
 			})
 			if err != nil {
-				fmt.Printf("Publishing message to make war failed: %s", err)
+				fmt.Printf("Publishing message to move troops failed: %s", err)
 				return pubsub.NackRequeue
 			}
 			return pubsub.Ack
@@ -44,16 +45,41 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 	}
 }
 
-func handlerConsumeWarMessages(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func publishGameLogHelper(ch *amqp.Channel, username, msg string) error {
+	gl := routing.GameLog{
+		CurrentTime: time.Now(),
+		Message:     msg,
+		Username:    username,
+	}
+	err := pubsub.PublishGob(ch, routing.ExchangePerilTopic, routing.GameLogSlug+"."+username, gl)
+	if err != nil {
+		fmt.Printf("Publishing message to make war failed: %s", err)
+	}
+	return err
+}
+
+func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	return func(data gamelogic.RecognitionOfWar) pubsub.AckType {
 		defer fmt.Print("> ")
-		outcome, _, _ := gs.HandleWar(data)
+		outcome, winner, loser := gs.HandleWar(data)
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
 			return pubsub.NackRequeue
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.NackDiscard
-		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon, gamelogic.WarOutcomeDraw:
+		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon:
+			message := fmt.Sprintf("%s won a war against %s", winner, loser)
+			err := publishGameLogHelper(ch, data.Attacker.Username, message)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
+		case gamelogic.WarOutcomeDraw:
+			message := fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+			err := publishGameLogHelper(ch, data.Attacker.Username, message)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		default:
 			fmt.Printf("Error")

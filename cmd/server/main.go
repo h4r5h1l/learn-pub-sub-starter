@@ -26,7 +26,12 @@ func main() {
 	defer rmqChannel.Close()
 	fmt.Println("Connected to RabbitMQ successfully!")
 
-	pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, "game_logs", "game_logs.*", pubsub.Durable)
+	//pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, "game_logs", "game_logs.*", pubsub.Durable)
+	err = pubsub.SubscribeGob(conn, routing.ExchangePerilTopic, "game_logs", "game_logs.*", pubsub.Durable, handlerLogs())
+	if err != nil {
+		fmt.Printf("Failed to subscribe to game_logs: %s\n", err)
+		return
+	}
 
 	gamelogic.PrintServerHelp()
 	for {

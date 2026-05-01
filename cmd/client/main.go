@@ -41,7 +41,7 @@ func main() {
 		fmt.Printf("Failed to subscribe to topic exchange army_moves queue: %s\n", err)
 		return
 	}
-	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "war", "war.*", pubsub.Durable, handlerConsumeWarMessages(gamestate))
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, "war", "war.*", pubsub.Durable, handlerWar(gamestate, rmqChannel))
 	if err != nil {
 		fmt.Printf("Failed to subscribe to topic exchange war queue: %s\n", err)
 		return
