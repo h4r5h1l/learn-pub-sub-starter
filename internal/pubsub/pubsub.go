@@ -86,6 +86,10 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 	if err != nil {
 		return err
 	}
+	err = ch.Qos(10, 0, false)
+	if err != nil {
+		fmt.Printf("Error during Prefetch: %s", err)
+	}
 	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return err
@@ -121,6 +125,10 @@ func SubscribeGob[T any](conn *amqp.Connection, exchange, queueName, key string,
 	ch, q, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
+	}
+	err = ch.Qos(10, 0, false)
+	if err != nil {
+		fmt.Printf("Error during Prefetch: %s", err)
 	}
 	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
